@@ -16,7 +16,7 @@ import java.util.List;
 
 @RestController
 public class HelloWorld {
-    private int Expire_Time=600;
+    private int Expire_Time=300;
     @Autowired
     JdbcTemplate jdbcTemplate;
     @Autowired
