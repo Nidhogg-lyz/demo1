@@ -21,7 +21,7 @@ public class HelloWorld {
     JdbcTemplate jdbcTemplate;
     @Autowired
     HttpSession request;
-    @RequestMapping("/")
+    @RequestMapping(value = "/")
     public String hello(){
         try{
             String name=request.getAttribute("name").toString();
@@ -69,7 +69,7 @@ public class HelloWorld {
     }
 
     @RequestMapping("/loginjson")
-    public String getjson(HttpServletRequest request,@RequestBody account a){
+    public String getjson(HttpServletRequest re,@RequestBody account a){
         if(a==null)
             return "用户名或密码不能为空!";
         String username;
@@ -96,7 +96,7 @@ public class HelloWorld {
                 argtpyes=new int[]{Types.BIGINT};
                 Map<String,Object> m=jdbcTemplate.queryForMap(sql,args,argtpyes);//只能用于查询一行记录，map键值为数据库表中查询到的个字段名
                 String res="登录成功!\n";
-                HttpSession session=request.getSession();
+                HttpSession session=re.getSession();
                 session.setMaxInactiveInterval(Expire_Time);//设置最大过期时长
                 session.setAttribute("username",username);
                 session.setAttribute("name",m.get("name"));
