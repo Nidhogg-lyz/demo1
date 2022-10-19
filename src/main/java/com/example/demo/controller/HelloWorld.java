@@ -1,14 +1,12 @@
 package com.example.demo.controller;
 
-//import com.sun.org.apache.xpath.internal.operations.Bool;
-import com.fasterxml.jackson.databind.util.JSONPObject;
-import netscape.javascript.JSObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
-
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import java.util.*;
 import java.sql.*;
@@ -19,12 +17,15 @@ public class HelloWorld {
     private int Expire_Time=300;
     @Autowired
     JdbcTemplate jdbcTemplate;
+//    @Autowired
+//    HttpSession session;
     @Autowired
-    HttpSession request;
+    HttpServletRequest re;
     @RequestMapping(value = "/")
     public String hello(){
         try{
-            String name=request.getAttribute("name").toString();
+            HttpSession session=re.getSession(false);
+            String name= session.getAttribute("name").toString();
             return "Welcome, "+name+"!";
         }
         catch (Exception e){
@@ -32,13 +33,18 @@ public class HelloWorld {
         }
     }
     @RequestMapping("/setPassword")
-    public String setPassword(@RequestBody String password){
+    public String setPassword(@RequestBody Map<String,Object> js){
         try{
-            int id=(int)request.getAttribute("stu_id");
-            String sql="UPDATE stu_account SET Password=? WHERE stu_id=?";
+            HttpSession session=re.getSession(false);
+            int id=(int) session.getAttribute("stu_id");
+            String oldPW=js.get("oldPW").toString();
+            String newPW=js.get("newPW").toString();
+            System.out.println("旧密码: "+oldPW);
+            System.out.println("新密码: "+newPW);
+            String sql="UPDATE stu_account SET Password=? WHERE stu_id=? AND Password=?";
             try{
-                jdbcTemplate.update(sql,new Object[]{password,id},new int[]{Types.VARCHAR,Types.BIGINT});
-                return "修改密码成功!"+"您的新密码为: "+password;
+                jdbcTemplate.update(sql,new Object[]{newPW,id,oldPW},new int[]{Types.VARCHAR,Types.BIGINT,Types.VARCHAR});
+                return "修改密码成功!"+"您的新密码为: "+newPW;
             }
             catch (Exception e){
                 return "修改密码失败!\n原因为: "+e.toString();
@@ -50,31 +56,36 @@ public class HelloWorld {
     }
     @RequestMapping("/getinfo")
     public String getinfo(){
+        Cookie[] cookies=re.getCookies();
+        if(cookies!=null){
+            for(Cookie c:cookies)
+                System.out.println(c.getValue());
+        }
+        HttpSession session=re.getSession(false);
         try{
-            String name=request.getAttribute("name").toString();
+            String name= session.getAttribute("name").toString();
         }
         catch (Exception e){
             return "您尚未登录!";
         }
-        String res="Hello, "+request.getAttribute("name")+"!";
+        String res="Hello, "+ session.getAttribute("name")+"!";
         String  gender=new String();
-        if(!(Boolean)request.getAttribute("gender"))
+        if(!(Boolean) session.getAttribute("gender"))
             gender="男";
         else
             gender="女";
         return res+"\n您的个人信息如下: "+
-                "\n学号: "+ request.getAttribute("student_no")+
+                "\n学号: "+ session.getAttribute("student_no")+
                 "\n性别: "+gender+
-                "\n邀请码: "+request.getAttribute("invitation_code");
+                "\n邀请码: "+ session.getAttribute("invitation_code");
     }
 
-    @RequestMapping("/loginjson")
-    public String getjson(HttpServletRequest re,@RequestBody account a){
+    @RequestMapping("/login")
+    public String getjson(HttpServletResponse resp, @RequestBody account a){
         if(a==null)
             return "用户名或密码不能为空!";
         String username;
         String password;
-
         try{
             username=a.getUsername();
             password=a.getPassword();
@@ -89,13 +100,13 @@ public class HelloWorld {
         int[] argtpyes=new int[]{Types.VARCHAR,Types.VARCHAR};
         try{
             int id=jdbcTemplate.queryForObject(sql,args,argtpyes,int.class);//只能用于查询单个字段，且根据java基本类型封装该字段值
-
             sql="SELECT student_no,name,gender,invitation_code FROM student WHERE stu_id=?";
             try{
                 args=new Object[]{id};
                 argtpyes=new int[]{Types.BIGINT};
                 Map<String,Object> m=jdbcTemplate.queryForMap(sql,args,argtpyes);//只能用于查询一行记录，map键值为数据库表中查询到的个字段名
                 String res="登录成功!\n";
+                System.out.println(res);
                 HttpSession session=re.getSession();
                 session.setMaxInactiveInterval(Expire_Time);//设置最大过期时长
                 session.setAttribute("username",username);
@@ -112,6 +123,9 @@ public class HelloWorld {
                     g="男";
                 else
                     g="女";
+                Cookie cookie1=new Cookie("sessionid",session.getId());
+                Cookie cookie2=new Cookie("stu_id",session.getAttribute("stu_id").toString());
+                resp.addCookie(cookie1);resp.addCookie(cookie2);
                 return res+"姓名: "+session.getAttribute("name")+
                         "\n学号: "+ session.getAttribute("student_no")+
                         "\n性别: "+g+
@@ -123,68 +137,26 @@ public class HelloWorld {
             }
         }
         catch (Exception E){
+            HttpSession temp=re.getSession(false);
+            if(temp!=null)
+                temp.invalidate();
             return "用户名或密码错误!";
         }
     }
 
-    @RequestMapping("/login")
-    public String getstudent(HttpServletRequest request, @RequestParam("username") String username, @RequestParam("password") String password){
-        if(username==null||password==null)
-            return "用户名或密码不能为空!";
-        String sql="SELECT stu_id FROM stu_account WHERE user_name=? AND Password=?";
-        Object[] args=new Object[]{username,password};
-        int[] argtpyes=new int[]{Types.VARCHAR,Types.VARCHAR};
-        try{
-            int id=jdbcTemplate.queryForObject(sql,args,argtpyes,int.class);//只能用于查询单个字段，且根据java基本类型封装该字段值
-
-            sql="SELECT student_no,name,gender,invitation_code FROM student WHERE stu_id=?";
-            try{
-                args=new Object[]{id};
-                argtpyes=new int[]{Types.BIGINT};
-                Map<String,Object> m=jdbcTemplate.queryForMap(sql,args,argtpyes);//只能用于查询一行记录，map键值为数据库表中查询到的个字段名
-                String res="登录成功!\n";
-                HttpSession session=request.getSession();
-                session.setMaxInactiveInterval(Expire_Time);//设置最大过期时长
-                session.setAttribute("username",username);
-                session.setAttribute("name",m.get("name"));
-                session.setAttribute("stu_id",id);
-                session.setAttribute("student_no",m.get("student_no"));
-                session.setAttribute("gender",m.get("gender"));
-                session.setAttribute("invitation_code",m.get("invitation_code"));
-//                for (Map.Entry<String, Object> entry : m.entrySet()) {
-//                    res+=(entry.getKey() + " : " + entry.getValue()+'\n');
-//                }
-                String g=new String();
-                if(!(Boolean)m.get("gender"))
-                    g="男";
-                else
-                    g="女";
-                return res+"姓名: "+session.getAttribute("name")+
-                        "\n学号: "+ session.getAttribute("student_no")+
-                        "\n性别: "+g+
-                        "\n邀请码: "+session.getAttribute("invitation_code");
-                //return res;
-            }
-            catch (Exception e){
-                return "您不具有选宿舍权限!";
-            }
-        }
-        catch (Exception E){
-            return "用户名或密码错误!";
-        }
-    }
     @RequestMapping("getbuilding_list")
     public String getBuilding_list(){
+        HttpSession session=re.getSession(false);
         try{
-            request.getAttribute("name").toString();
+            session.getAttribute("name").toString();
         }
         catch (Exception e){
             return "您尚未登录!";
         }
-        Boolean gender=(Boolean)request.getAttribute("gender");
+        Boolean gender=(Boolean) session.getAttribute("gender");
         String sql="SELECT DISTINCT building_id FROM room WHERE gender=?";
         List<Integer> l=jdbcTemplate.queryForList(sql,new Object[]{gender},new int[]{Types.BOOLEAN},Integer.class);
-        String res=request.getAttribute("name")+",您当前可选择的宿舍楼号为: \n";
+        String res= session.getAttribute("name")+",您当前可选择的宿舍楼号为: \n";
         for(int id:l){
             res+=id+"号楼\n";
         }
@@ -193,8 +165,9 @@ public class HelloWorld {
 
     @RequestMapping("/getremain_beds")
     public String getRemain_beds(Integer building_no){
+        HttpSession session=re.getSession(false);
         try{
-            Boolean gender=(Boolean) request.getAttribute("gender");
+            Boolean gender=(Boolean) session.getAttribute("gender");
             String g=new String();
             if(!gender)
                 g="男";
@@ -270,7 +243,6 @@ public class HelloWorld {
         return result;
     }
 
-
 //    ResultSet test(){
 //        try{
 //            Class.forName("com.mysql.cj.jdbc.Driver");
@@ -285,4 +257,5 @@ public class HelloWorld {
 //            return null;
 //        }
 //    }
+
 }
