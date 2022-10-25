@@ -1,13 +1,12 @@
 package com.example.demo.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
-import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import java.util.*;
 import java.sql.*;
 import java.util.List;
@@ -15,82 +14,35 @@ import java.util.List;
 @RestController
 public class HelloWorld {
     private int Expire_Time=300;
+
     @Autowired
     JdbcTemplate jdbcTemplate;
-//    @Autowired
-//    HttpSession session;
     @Autowired
     HttpServletRequest re;
+    private String getToken(String id,Map<String,Object> m){
+        String token=tokenGenerator.sign(id,m);
+        return "token: "+token;
+    }
+
     @RequestMapping(value = "/")
-    public String hello(){
+    public String Hello(){
         try{
-            HttpSession session=re.getSession(false);
-            String name= session.getAttribute("name").toString();
+            String token=re.getHeader("token");
+            String name=tokenGenerator.getName(token);
             return "Welcome, "+name+"!";
         }
         catch (Exception e){
             return "Welcome, new student!";
         }
     }
-    @RequestMapping("/setPassword")
-    public String setPassword(@RequestBody Map<String,Object> js){
-        try{
-            HttpSession session=re.getSession(false);
-            int id=(int) session.getAttribute("stu_id");
-            String oldPW=js.get("oldPW").toString();
-            String newPW=js.get("newPW").toString();
-            System.out.println("旧密码: "+oldPW);
-            System.out.println("新密码: "+newPW);
-            String sql="UPDATE stu_account SET Password=? WHERE stu_id=? AND Password=?";
-            try{
-                jdbcTemplate.update(sql,new Object[]{newPW,id,oldPW},new int[]{Types.VARCHAR,Types.BIGINT,Types.VARCHAR});
-                return "修改密码成功!"+"您的新密码为: "+newPW;
-            }
-            catch (Exception e){
-                return "修改密码失败!\n原因为: "+e.toString();
-            }
-        }
-        catch (Exception e){
-            return "您尚未登录!";
-        }
-    }
-    @RequestMapping("/getinfo")
-    public String getinfo(){
-        Cookie[] cookies=re.getCookies();
-        if(cookies!=null){
-            for(Cookie c:cookies)
-                System.out.println(c.getValue());
-        }
-        HttpSession session=re.getSession(false);
-        try{
-            String name= session.getAttribute("name").toString();
-        }
-        catch (Exception e){
-            return "您尚未登录!";
-        }
-        String res="Hello, "+ session.getAttribute("name")+"!";
-        String  gender=new String();
-        if(!(Boolean) session.getAttribute("gender"))
-            gender="男";
-        else
-            gender="女";
-        return res+"\n您的个人信息如下: "+
-                "\n学号: "+ session.getAttribute("student_no")+
-                "\n性别: "+gender+
-                "\n邀请码: "+ session.getAttribute("invitation_code");
-    }
 
     @RequestMapping("/login")
-    public String getjson(HttpServletResponse resp, @RequestBody account a){
-        if(a==null)
-            return "用户名或密码不能为空!";
+    public String Login(HttpServletResponse resp, @RequestBody Account a){
         String username;
         String password;
         try{
             username=a.getUsername();
             password=a.getPassword();
-            System.out.println(username);
-            System.out.println(password);
         }
         catch (Exception e){
             return "用户名或密码不能为空!";
@@ -107,56 +59,166 @@ public class HelloWorld {
                 Map<String,Object> m=jdbcTemplate.queryForMap(sql,args,argtpyes);//只能用于查询一行记录，map键值为数据库表中查询到的个字段名
                 String res="登录成功!\n";
                 System.out.println(res);
-                HttpSession session=re.getSession();
-                session.setMaxInactiveInterval(Expire_Time);//设置最大过期时长
-                session.setAttribute("username",username);
-                session.setAttribute("name",m.get("name"));
-                session.setAttribute("stu_id",id);
-                session.setAttribute("student_no",m.get("student_no"));
-                session.setAttribute("gender",m.get("gender"));
-                session.setAttribute("invitation_code",m.get("invitation_code"));
-//                for (Map.Entry<String, Object> entry : m.entrySet()) {
-//                    res+=(entry.getKey() + " : " + entry.getValue()+'\n');
-//                }
-                String g=new String();
-                if(!(Boolean)m.get("gender"))
-                    g="男";
-                else
-                    g="女";
-                Cookie cookie1=new Cookie("sessionid",session.getId());
-                Cookie cookie2=new Cookie("stu_id",session.getAttribute("stu_id").toString());
-                resp.addCookie(cookie1);resp.addCookie(cookie2);
-                return res+"姓名: "+session.getAttribute("name")+
-                        "\n学号: "+ session.getAttribute("student_no")+
-                        "\n性别: "+g+
-                        "\n邀请码: "+session.getAttribute("invitation_code");
-                //return res;
+
+                //Use Token
+                String token=getToken(""+id,m);
+                resp.addHeader("token",token);
+                return res+m.get("name").toString();
             }
             catch (Exception e){
+                System.out.println(e.toString());
                 return "您不具有选宿舍权限!";
             }
         }
         catch (Exception E){
-            HttpSession temp=re.getSession(false);
-            if(temp!=null)
-                temp.invalidate();
             return "用户名或密码错误!";
         }
     }
 
-    @RequestMapping("getbuilding_list")
-    public String getBuilding_list(){
-        HttpSession session=re.getSession(false);
+    @RequestMapping("/setPassword")
+    public String setPassword(@RequestBody Map<String,Object> js){
         try{
-            session.getAttribute("name").toString();
+            String token=re.getHeader("token");
+            int id=Integer.parseInt(tokenGenerator.getId(token));
+            String oldPW=js.get("oldPW").toString();
+            String newPW=js.get("newPW").toString();
+            System.out.println("旧密码: "+oldPW);
+            System.out.println("新密码: "+newPW);
+            String sql="UPDATE stu_account SET Password=? WHERE stu_id=? AND Password=?";
+            try{
+                if(oldPW==newPW)
+                    throw new Exception("新旧密码不能相同!");
+                int state=jdbcTemplate.update(sql,new Object[]{newPW,id,oldPW},new int[]{Types.VARCHAR,Types.BIGINT,Types.VARCHAR});
+                if(state==0)
+                    throw new Exception("无法找到对应用户,修改失败");
+                return "修改密码成功!"+"您的新密码为: "+newPW;
+            }
+            catch (Exception e){
+                return "修改密码失败!\n原因为: "+e.toString();
+            }
         }
         catch (Exception e){
             return "您尚未登录!";
         }
-        Boolean gender=(Boolean) session.getAttribute("gender");
+    }
+    @RequestMapping("/order")
+    public String getOrder(@RequestBody Map<String,Object> js){
+        int state=0;
+        Order o=new Order();
+        try{
+            o.setMembers(js.get("members").toString());
+            o.setGender((Boolean) js.get("gender"));
+            o.setBuilding_id((Integer)js.get("building_id"));
+            if(js.get("invitation_code")==null)
+                throw new Exception("无邀请码输入!");
+        }
+        catch(Exception e){
+            System.out.println(e);
+            return "传入参数错误!";
+        }
+        String []invitation_code=js.get("invitation_code").toString().split("\n");
+        String []members=o.getMembers().split("\n");
+        String sql="INSERT INTO order_list values (null,?,?,?,?,?)";
+        int []ids=new int[members.length];
+        if(members.length>5)
+            return "队人数过多!";
+        if(members.length!=invitation_code.length)
+            return "成员与邀请码数量不符!";
+        try{
+            for(int i=0;i<members.length;++i){
+                String m=members[i];
+                String c=invitation_code[i];
+                String check="SELECT stu_id FROM student WHERE student_no=? AND invitation_code=?";
+                int id=jdbcTemplate.queryForObject(check,new Object[]{m,c},new int[]{Types.VARCHAR,Types.VARCHAR},int.class);
+                String checkgender="SELECT gender FROM student WHERE stu_id=?";
+                boolean g=jdbcTemplate.queryForObject(checkgender,new Object[]{id},new int[]{Types.BIGINT},boolean.class);
+                if(g^o.isGender()){
+                    throw new Exception("性别不符!");
+                }
+                String checks="SELECT room_id FROM allocation WHERE stu_id=?";
+                String room_id;
+                try{
+                    room_id=jdbcTemplate.queryForObject(checks,new Object[]{id},new int[]{Types.BIGINT},String.class);
+                }
+                catch (EmptyResultDataAccessException e){
+                    room_id=null;
+                }
+                if(room_id!=null)
+                    throw new Exception(id+"学生已被分配宿舍");
+                ids[i]=id;
+            }
+            o.setTeam_size(ids.length);
+            System.out.println("team_size: "+o.getTeam_size());
+            for(int i:ids)
+                System.out.println(i);
+            try{
+                String getroom="SELECT * FROM room WHERE building_id=? AND gender=? AND remain_beds>=?";
+                List<Room> rooms=jdbcTemplate.query(getroom,new Object[]{o.getBuilding_id(),o.isGender(),o.getTeam_size()},
+                        new int[]{Types.INTEGER,Types.BOOLEAN,Types.TINYINT},new BeanPropertyRowMapper<>(Room.class));
+                Room target=rooms.get(0);
+
+                System.out.println("room_id: "+target.getRoom_id()+" room_size: "+target.getRemain_beds());
+
+                String up="UPDATE room SET remain_beds=? WHERE room_id=?";
+                int newrb=target.getRemain_beds()-o.getTeam_size();
+                System.out.println("new beds: "+newrb);
+
+                jdbcTemplate.update(up,new Object[]{newrb,target.getRoom_id()},new int[]{Types.TINYINT,Types.VARCHAR});
+                String inst="INSERT INTO allocation VALUES (?,?)";
+                for(int i:ids){
+                    jdbcTemplate.update(inst,new Object[]{i,target.getRoom_id()},new int[]{Types.BIGINT,Types.VARCHAR});
+                }
+                state=0;
+                o.setState(state);
+            }
+            catch(Exception e){
+                System.err.println(e);
+                System.err.println("无满足要求的房间!");
+                state=1;
+                o.setState(state);
+            }
+        }
+        catch(EmptyResultDataAccessException e){
+            System.err.println(e);
+            System.err.println("成员邀请码错误!");
+            state=-1;
+            o.setState(state);
+        }
+        catch (Exception e){
+            state=-1;
+            o.setState(state);
+            System.err.println(e);
+        }
+        finally {
+            int res= jdbcTemplate.update(sql,new Object[]{o.getTeam_size(),o.getMembers(),o.getBuilding_id(),o.isGender(),o.getState()},
+                    new int[]{Types.TINYINT,Types.VARCHAR,Types.TINYINT,Types.BOOLEAN,Types.TINYINT});
+            return "订单状态为: "+o.getState();
+        }
+    }
+    @RequestMapping("/getinfo")
+    public String getinfo(){
+        String token=re.getHeader("token");
+        System.out.println("token:"+token);
+
+        String res="Hello, "+ tokenGenerator.getName(token)+"!";
+        String  gender=new String();
+        if(!(Boolean) tokenGenerator.getGender(token))
+            gender="男";
+        else
+            gender="女";
+        return res+"\n您的个人信息如下: "+
+                "\n学号: "+ tokenGenerator.getStu_no(token)+
+                "\n性别: "+gender+
+                "\n邀请码: "+ tokenGenerator.getCode(token);
+    }
+
+    @RequestMapping("getbuilding_list")
+    public String getBuilding_list(){
+        String token=re.getHeader("token");
+        Boolean gender=tokenGenerator.getGender(token);
         String sql="SELECT DISTINCT building_id FROM room WHERE gender=?";
-        List<Integer> l=jdbcTemplate.queryForList(sql,new Object[]{gender},new int[]{Types.BOOLEAN},Integer.class);
-        String res= session.getAttribute("name")+",您当前可选择的宿舍楼号为: \n";
+        List<Integer> l=jdbcTemplate.queryForList(sql,new Object[]{gender},new int[]{Types.BOOLEAN},Integer.class);//用于查询列表(多个匹配)
+        String res= tokenGenerator.getName(token)+",您当前可选择的宿舍楼号为: \n";
         for(int id:l){
             res+=id+"号楼\n";
         }
@@ -165,97 +227,65 @@ public class HelloWorld {
 
     @RequestMapping("/getremain_beds")
     public String getRemain_beds(Integer building_no){
-        HttpSession session=re.getSession(false);
+        String token=re.getHeader("token");
+        Boolean gender=tokenGenerator.getGender(token);
+        String g=new String();
+        if(!gender)
+            g="男";
+        else
+            g="女";
+        String res="";
         try{
-            Boolean gender=(Boolean) session.getAttribute("gender");
-            String g=new String();
-            if(!gender)
-                g="男";
-            else
-                g="女";
-            String res="";
-            try{
-                String sql="SELECT SUM(remain_beds) FROM room WHERE gender=? AND building_id=?";
-                if(building_no!=null){
-                    int cnt=jdbcTemplate.queryForObject(sql,new Object[]{gender,building_no},new int[]{Types.BOOLEAN,Types.INTEGER},int.class);
-                    return building_no+"号楼中"+g+"生剩余床位数量为: "+cnt;
-                }
-                String getbuildings="SELECT DISTINCT building_id FROM room";
-                List<Integer> buildings=jdbcTemplate.queryForList(getbuildings,Integer.class);
-                for(int no:buildings){
-                    int cnt=jdbcTemplate.queryForObject(sql,new Object[]{gender,no},new int[]{Types.BOOLEAN,Types.INTEGER},int.class);
-                    res+=no+"号楼中"+g+"生剩余床位数量为: "+cnt+'\n';
-                }
-                return res;
+            String sql="SELECT SUM(remain_beds) FROM room WHERE gender=? AND building_id=?";
+            if(building_no!=null){
+                int cnt=jdbcTemplate.queryForObject(sql,new Object[]{gender,building_no},new int[]{Types.BOOLEAN,Types.INTEGER},int.class);
+                return building_no+"号楼中"+g+"生剩余床位数量为: "+cnt;
             }
-            catch (Exception e){
-                System.out.println(e);
-                return "对应楼中无满足条件的床位!";
+            String getbuildings="SELECT DISTINCT building_id FROM room";
+            List<Integer> buildings=jdbcTemplate.queryForList(getbuildings,Integer.class);
+            for(int no:buildings){
+                int cnt=jdbcTemplate.queryForObject(sql,new Object[]{gender,no},new int[]{Types.BOOLEAN,Types.INTEGER},int.class);
+                res+=no+"号楼中"+g+"生剩余床位数量为: "+cnt+'\n';
             }
+            return res;
         }
         catch (Exception e){
-            return "您尚未登录!";
+            System.out.println(e);
+            return "对应楼中无满足条件的床位!";
         }
     }
-
+    @Deprecated
     @RequestMapping(value="/default")
     public List<String> test() {
         String sql = "SELECT * FROM room WHERE remain_beds>=1 AND gender=0";
-        //ResultSet res=jdbcTemplate.query(sql);
-        List<room> r = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(room.class));
-
-
+        List<Room> r = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(Room.class));//返回自定义对象列表
         List<String> result=new ArrayList<String>();
-        for(room t_r:r) {
+        for(Room t_r:r) {
             result.add(result.size(), t_r.toString());
         }
-
         return result;
     }
-
-    @RequestMapping("/select")
-    public List<Map<String, Object>> select(){
-        String sql="SELECT * FROM room WHERE is_empty=1";
-        return jdbcTemplate.queryForList(sql);
-    }
+    @Deprecated
     @RequestMapping("/add")
     public List<Map<String,Object>> insert(){
         String sql="INSERT INTO room values (?,?,?,?)";
-        int block=13;
-        int suite=3111;
-        String sex="female";
-        boolean is_empty=true;
+        int building_id=13;
+        int room_id=3111;
+        boolean gender=true;
+        int remain_beds=2;
         String res="SELECT * FROM room WHERE block=13";
-        jdbcTemplate.update(sql,block,suite,sex,is_empty);
+        jdbcTemplate.update(sql,room_id,building_id,remain_beds,gender);
         return jdbcTemplate.queryForList(res);
     }
-
+    @Deprecated
     @RequestMapping("/del")
     public List<String> delete(){
-        String sql="DELETE FROM room WHERE block=?";
-        int block=13;
-        jdbcTemplate.update(sql,block);
         String get_all="SELECT * FROM room";
-        List<room> res=jdbcTemplate.query(get_all,new BeanPropertyRowMapper<>(room.class));
+        List<Room> res=jdbcTemplate.query(get_all,new BeanPropertyRowMapper<>(Room.class));
         List<String> result=new ArrayList<>();
-        for(room r:res)
+        for(Room r:res)
             result.add(result.size(), r.toString());
         return result;
     }
-
-//    ResultSet test(){
-//        try{
-//            Class.forName("com.mysql.cj.jdbc.Driver");
-//            Connection con=DriverManager.getConnection(
-//                    "jdbc:mysql://139.224.80.108:3306/dormitory","student","123456");
-//            Statement stmt=con.createStatement();
-//            ResultSet rs=stmt.executeQuery("SELECT * FROM room WHERE block=5");
-//            con.close();
-//            return rs;
-//        }catch(Exception e){
-//            System.out.println(e);
-//            return null;
-//        }
-//    }
 
 }
