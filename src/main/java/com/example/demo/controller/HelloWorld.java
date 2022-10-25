@@ -198,7 +198,7 @@ public class HelloWorld {
     @RequestMapping("/getinfo")
     public String getinfo(){
         String token=re.getHeader("token");
-        System.out.println("token:"+token);
+        System.out.println("your token is:"+token);
 
         String res="Hello, "+ tokenGenerator.getName(token)+"!";
         String  gender=new String();

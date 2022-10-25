@@ -14,7 +14,9 @@ public class Interceptor implements HandlerInterceptor {
         String token=request.getHeader("token");
         System.out.println("token: "+token);
         if(token==null){
-            response.sendError(-1,"未提供token, 您尚未登录!");
+            //response.sendError(401,"未提供token, 您尚未登录!"); //为什么会响应两次？ 即该句执行后，客户端还会有一个请求过来被拦截，表现为上述打印语句被执行了两次
+            //response.addHeader("message","no token found, you've not login!"); // info in header
+            response.getWriter().write("no token found, you've not login!"); // info in body
             return false;
 //            throw new Exception("token无效!");
         }
@@ -22,7 +24,9 @@ public class Interceptor implements HandlerInterceptor {
             tokenGenerator.check(token);
         }
         catch (Exception e){
-            response.sendError(-1,"token无效!\n"+e.toString());
+            //response.sendError(401,"token无效!\n"+e.toString());
+            //response.addHeader("message","invalid token!\n"+e.toString());
+            response.getWriter().write("invalid token!\n"+e.toString());
             return false;
         }
         System.out.println("token有效!: "+token);
