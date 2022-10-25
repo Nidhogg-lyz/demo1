@@ -21,6 +21,29 @@ public class HelloWorld {
 //    HttpSession session;
     @Autowired
     HttpServletRequest re;
+    
+    private Cookie[] setSession(Map<String,Object> m,String username,int id){
+        HttpSession session=re.getSession();
+        session.setMaxInactiveInterval(Expire_Time);//设置最大过期时长
+        session.setAttribute("username",username);
+        session.setAttribute("name",m.get("name"));
+        session.setAttribute("stu_id",id);
+        session.setAttribute("student_no",m.get("student_no"));
+        session.setAttribute("gender",m.get("gender"));
+        session.setAttribute("invitation_code",m.get("invitation_code"));
+//                for (Map.Entry<String, Object> entry : m.entrySet()) {
+//                    res+=(entry.getKey() + " : " + entry.getValue()+'\n');
+//                }
+        String g;
+        if(!(Boolean)m.get("gender"))
+            g="男";
+        else
+            g="女";
+        Cookie cookie1=new Cookie("sessionid",session.getId());
+        Cookie cookie2=new Cookie("stu_id",session.getAttribute("stu_id").toString());
+        return new Cookie[]{cookie1,cookie2};
+    }
+    
     @RequestMapping(value = "/")
     public String hello(){
         try{
@@ -107,25 +130,19 @@ public class HelloWorld {
                 Map<String,Object> m=jdbcTemplate.queryForMap(sql,args,argtpyes);//只能用于查询一行记录，map键值为数据库表中查询到的个字段名
                 String res="登录成功!\n";
                 System.out.println(res);
-                HttpSession session=re.getSession();
-                session.setMaxInactiveInterval(Expire_Time);//设置最大过期时长
-                session.setAttribute("username",username);
-                session.setAttribute("name",m.get("name"));
-                session.setAttribute("stu_id",id);
-                session.setAttribute("student_no",m.get("student_no"));
-                session.setAttribute("gender",m.get("gender"));
-                session.setAttribute("invitation_code",m.get("invitation_code"));
-//                for (Map.Entry<String, Object> entry : m.entrySet()) {
-//                    res+=(entry.getKey() + " : " + entry.getValue()+'\n');
-//                }
+                Cookie[] cookies=setSession(m,username,id);
+                
+                for(Cookie c:cookies)
+                    resp.addCookie(c);
+                
+                
                 String g=new String();
                 if(!(Boolean)m.get("gender"))
                     g="男";
                 else
                     g="女";
-                Cookie cookie1=new Cookie("sessionid",session.getId());
-                Cookie cookie2=new Cookie("stu_id",session.getAttribute("stu_id").toString());
-                resp.addCookie(cookie1);resp.addCookie(cookie2);
+                
+                
                 return res+"姓名: "+session.getAttribute("name")+
                         "\n学号: "+ session.getAttribute("student_no")+
                         "\n性别: "+g+
