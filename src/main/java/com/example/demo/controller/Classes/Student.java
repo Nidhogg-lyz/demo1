@@ -1,4 +1,4 @@
-package com.example.demo.controller;
+package com.example.demo.controller.Classes;
 
 public class Student {
     public String student_no;

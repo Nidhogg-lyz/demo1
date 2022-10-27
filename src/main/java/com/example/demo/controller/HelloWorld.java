@@ -1,10 +1,17 @@
 package com.example.demo.controller;
 
+import com.example.demo.controller.Classes.Account;
+import com.example.demo.controller.Classes.Order;
+import com.example.demo.controller.Classes.Room;
+import com.example.demo.controller.Classes.tokenGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
+import redis.clients.jedis.Jedis;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.util.*;
@@ -14,13 +21,15 @@ import java.util.List;
 @RestController
 public class HelloWorld {
     private int Expire_Time=300;
+    private String REDIS="101.133.129.88";
+    private int REIDS_INDEX=1;
 
     @Autowired
     JdbcTemplate jdbcTemplate;
     @Autowired
     HttpServletRequest re;
     private String getToken(String id,Map<String,Object> m){
-        String token=tokenGenerator.sign(id,m);
+        String token= tokenGenerator.sign(id,m);
         return "token: "+token;
     }
 
@@ -227,6 +236,9 @@ public class HelloWorld {
 
     @RequestMapping("/getremain_beds")
     public String getRemain_beds(Integer building_no){
+        Jedis redis=new Jedis(REDIS,6379);
+        redis.select(REIDS_INDEX);
+
         String token=re.getHeader("token");
         Boolean gender=tokenGenerator.getGender(token);
         String g=new String();
@@ -235,17 +247,28 @@ public class HelloWorld {
         else
             g="女";
         String res="";
+
         try{
             String sql="SELECT SUM(remain_beds) FROM room WHERE gender=? AND building_id=?";
             if(building_no!=null){
-                int cnt=jdbcTemplate.queryForObject(sql,new Object[]{gender,building_no},new int[]{Types.BOOLEAN,Types.INTEGER},int.class);
-                return building_no+"号楼中"+g+"生剩余床位数量为: "+cnt;
+                String key=""+building_no+gender;
+                String count=redis.get(key);
+                if(count==null){//redis中未找到相关信息，从数据库中获取数据并存入redis
+                    count=jdbcTemplate.queryForObject(sql,new Object[]{gender,building_no},new int[]{Types.BOOLEAN,Types.INTEGER},int.class).toString();
+                    redis.set(key,count);
+                }
+                return building_no+"号楼中"+g+"生剩余床位数量为: "+count;
             }
             String getbuildings="SELECT DISTINCT building_id FROM room";
             List<Integer> buildings=jdbcTemplate.queryForList(getbuildings,Integer.class);
             for(int no:buildings){
-                int cnt=jdbcTemplate.queryForObject(sql,new Object[]{gender,no},new int[]{Types.BOOLEAN,Types.INTEGER},int.class);
-                res+=no+"号楼中"+g+"生剩余床位数量为: "+cnt+'\n';
+                String key=""+no+gender;
+                String count=redis.get(key);
+                if(count==null) {
+                    count=jdbcTemplate.queryForObject(sql, new Object[]{gender, no}, new int[]{Types.BOOLEAN, Types.INTEGER}, int.class).toString();
+                    redis.set(key,count);
+                }
+                res+=no+"号楼中"+g+"生剩余床位数量为: "+count+'\n';
             }
             return res;
         }
@@ -287,5 +310,4 @@ public class HelloWorld {
             result.add(result.size(), r.toString());
         return result;
     }
-
 }

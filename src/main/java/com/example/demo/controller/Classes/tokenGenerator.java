@@ -1,4 +1,4 @@
-package com.example.demo.controller;
+package com.example.demo.controller.Classes;
 
 
 import com.auth0.jwt.JWT;

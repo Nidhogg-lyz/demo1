@@ -1,4 +1,4 @@
-package com.example.demo.controller;
+package com.example.demo.controller.Classes;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 
