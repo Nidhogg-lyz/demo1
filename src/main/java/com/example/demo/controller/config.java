@@ -13,7 +13,8 @@ public class config implements WebMvcConfigurer {
         registry.addInterceptor(Interceptor()).addPathPatterns("/**")
                 .excludePathPatterns("/gettoken")
                 .excludePathPatterns("/")
-                .excludePathPatterns("/login");
+                .excludePathPatterns("/login")
+                .excludePathPatterns("/test*");
     }
     @Bean
     public Interceptor Interceptor(){

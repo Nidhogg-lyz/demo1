@@ -1,11 +1,8 @@
 package com.example.demo.controller;
 
-import com.example.demo.controller.Classes.Account;
-import com.example.demo.controller.Classes.Order;
-import com.example.demo.controller.Classes.Room;
-import com.example.demo.controller.Classes.tokenGenerator;
+import com.example.demo.controller.Classes.*;
+import com.rabbitmq.client.Channel;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,12 +19,18 @@ import java.util.List;
 public class HelloWorld {
     private int Expire_Time=300;
     private String REDIS="101.133.129.88";
+    private String MQ="101.133.231.147";
     private int REIDS_INDEX=1;
+    private final static String QUEUE_NAME="nidhogg";
 
     @Autowired
     JdbcTemplate jdbcTemplate;
     @Autowired
     HttpServletRequest re;
+    @Autowired
+    Sender sender;
+    @Autowired
+    Receiver receiver;
     private String getToken(String id,Map<String,Object> m){
         String token= tokenGenerator.sign(id,m);
         return "token: "+token;
@@ -36,15 +39,34 @@ public class HelloWorld {
     @RequestMapping(value = "/")
     public String Hello(){
         try{
+            String message="Hello World!";
+            Channel s=sender.getChannel();
+            s.basicPublish("", QUEUE_NAME, null, message.getBytes());
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+        try{
             String token=re.getHeader("token");
             String name=tokenGenerator.getName(token);
+            //receiver.consume();
             return "Welcome, "+name+"!";
         }
         catch (Exception e){
             return "Welcome, new student!";
         }
     }
-
+    @RequestMapping("/test_rabbitmq")
+    public String order2mq(@RequestBody Map<String,Object> js){
+        try{
+            Channel s=sender.getChannel();
+            s.basicPublish("", QUEUE_NAME, null, js.toString().getBytes());
+            return "Order published to rabbitMQ successfully!";
+        }
+        catch (Exception e){
+            return "Order publishing failed!";
+        }
+    }
     @RequestMapping("/login")
     public String Login(HttpServletResponse resp, @RequestBody Account a){
         String username;
@@ -111,7 +133,7 @@ public class HelloWorld {
         }
     }
     @RequestMapping("/order")
-    public String getOrder(@RequestBody Map<String,Object> js){
+    public String placeOrder(@RequestBody Map<String,Object> js){
         int state=0;
         Order o=new Order();
         try{
